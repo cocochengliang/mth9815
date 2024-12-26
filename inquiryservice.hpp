@@ -74,6 +74,10 @@ public:
 
   // Send a quote back to the client
   void SendQuote(const std::string &inquiryId, double price) {
+    if (dataStore.find(inquiryId) == dataStore.end()) {
+      throw std::runtime_error("Inquiry not found for ID: " + inquiryId);
+    }
+
     auto& inquiry = dataStore[inquiryId];
     inquiry.SetPrice(price);
     inquiry.SetState(QUOTED);
@@ -84,6 +88,10 @@ public:
 
   // Reject an inquiry from the client
   void RejectInquiry(const std::string &inquiryId) {
+    if (dataStore.find(inquiryId) == dataStore.end()) {
+      throw std::runtime_error("Inquiry not found for ID: " + inquiryId);
+    }
+
     auto& inquiry = dataStore[inquiryId];
     inquiry.SetState(REJECTED);
     for (auto& listener : listeners) {
@@ -101,11 +109,10 @@ public:
 
   // Get data by inquiry ID
   Inquiry<T>& GetData(std::string inquiryId) override {
-    if (dataStore.find(inquiryId) != dataStore.end()) {
-      return dataStore[inquiryId];
-    } else {
+    if (dataStore.find(inquiryId) == dataStore.end()) {
       throw std::runtime_error("Inquiry not found for ID: " + inquiryId);
     }
+    return dataStore[inquiryId];
   }
 
   // Add a listener to the service

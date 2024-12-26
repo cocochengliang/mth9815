@@ -9,6 +9,9 @@
 
 #include <string>
 #include <vector>
+#include <map>
+#include <stdexcept>
+#include <iostream>
 #include "soa.hpp"
 
 using namespace std;
@@ -105,6 +108,10 @@ public:
 
   // Get the best bid/offer order
   const BidOffer& GetBestBidOffer(const string &productId) {
+    if (dataStore.find(productId) == dataStore.end()) {
+        throw runtime_error("OrderBook not found for product ID: " + productId);
+    }
+
     auto& orderBook = dataStore[productId];
     const Order& bestBid = orderBook.GetBidStack().front();
     const Order& bestOffer = orderBook.GetOfferStack().front();
@@ -114,6 +121,10 @@ public:
 
   // Aggregate the order book
   const OrderBook<T>& AggregateDepth(const string &productId) {
+    if (dataStore.find(productId) == dataStore.end()) {
+        throw runtime_error("OrderBook not found for product ID: " + productId);
+    }
+
     return dataStore[productId];
   }
 
@@ -134,17 +145,16 @@ public:
 
     // Notify all listeners
     for (auto& listener : listeners) {
-      listener->ProcessAdd(data);
+        listener->ProcessAdd(data);
     }
   }
 
   // Get data by product ID
   OrderBook<T>& GetData(string productId) override {
-    if (dataStore.find(productId) != dataStore.end()) {
-      return dataStore[productId];
-    } else {
-      throw runtime_error("OrderBook not found for product ID: " + productId);
+    if (dataStore.find(productId) == dataStore.end()) {
+        throw runtime_error("OrderBook not found for product ID: " + productId);
     }
+    return dataStore[productId];
   }
 
 private:

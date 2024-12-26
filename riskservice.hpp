@@ -9,6 +9,9 @@
 
 #include "soa.hpp"
 #include "positionservice.hpp"
+#include <unordered_map>
+#include <iostream>
+#include <stdexcept>
 
 /**
  * PV01 risk.
@@ -32,6 +35,9 @@ public:
   // Get the quantity that this risk value is associated with
   long GetQuantity() const;
 
+  // Update the quantity
+  void UpdateQuantity(long newQuantity);
+
 private:
   T product;
   double pv01;
@@ -51,17 +57,17 @@ class BucketedSector
 public:
 
   // ctor for a bucket sector
-  BucketedSector(const vector<T> &_products, string _name);
+  BucketedSector(const std::vector<T> &_products, std::string _name);
 
   // Get the products associated with this bucket
-  const vector<T>& GetProducts() const;
+  const std::vector<T>& GetProducts() const;
 
   // Get the name of the bucket
-  const string& GetName() const;
+  const std::string& GetName() const;
 
 private:
-  vector<T> products;
-  string name;
+  std::vector<T> products;
+  std::string name;
 
 };
 
@@ -71,44 +77,69 @@ private:
  * Type T is the product type.
  */
 template<typename T>
-class RiskService : public Service<string, PV01<T>>
+class RiskService : public Service<std::string, PV01<T>>
 {
 
 public:
 
   // Add a position that the service will risk
   void AddPosition(Position<T> &position) override {
-    string productId = position.GetProduct().GetProductId();
+    std::string productId = position.GetProduct().GetProductId();
     long aggregatePosition = position.GetAggregatePosition();
 
-    if (this->data.find(productId) == this->data.end()) {
-      this->data[productId] = PV01<T>(position.GetProduct(), 0.01, aggregatePosition);
+    if (data.find(productId) == data.end()) {
+      data[productId] = PV01<T>(position.GetProduct(), 0.01, aggregatePosition);
+    } else {
+      data[productId].UpdateQuantity(aggregatePosition);
     }
 
-    PV01<T> &pv01 = this->data[productId];
-    pv01 = PV01<T>(position.GetProduct(), pv01.GetPV01(), aggregatePosition);
+    PV01<T> &pv01 = data[productId];
 
-    for (auto &listener : this->listeners) {
+    for (auto &listener : listeners) {
       listener->ProcessUpdate(pv01);
     }
   }
 
   // Get the bucketed risk for the bucket sector
-  const PV01<BucketedSector<T>>& GetBucketedRisk(const BucketedSector<T> &sector) const override {
+  PV01<BucketedSector<T>> GetBucketedRisk(const BucketedSector<T> &sector) const {
     double totalPv01 = 0.0;
     long totalQuantity = 0;
 
     for (const auto &product : sector.GetProducts()) {
-      string productId = product.GetProductId();
-      const PV01<T> &pv01 = this->data.at(productId);
+      std::string productId = product.GetProductId();
+      if (data.find(productId) == data.end()) {
+        throw std::runtime_error("Product not found in RiskService: " + productId);
+      }
+      const PV01<T> &pv01 = data.at(productId);
       totalPv01 += pv01.GetPV01() * pv01.GetQuantity();
       totalQuantity += pv01.GetQuantity();
     }
 
-    static PV01<BucketedSector<T>> bucketedRisk(sector, totalPv01, totalQuantity);
-    return bucketedRisk;
+    return PV01<BucketedSector<T>>(sector, totalPv01 / totalQuantity, totalQuantity);
   }
 
+  // Get data by product ID
+  PV01<T>& GetData(const std::string& productId) override {
+    if (data.find(productId) != data.end()) {
+      return data[productId];
+    } else {
+      throw std::runtime_error("PV01 not found for product ID: " + productId);
+    }
+  }
+
+  // Add a listener to the service
+  void AddListener(ServiceListener<PV01<T>>* listener) override {
+    listeners.push_back(listener);
+  }
+
+  // Get all listeners
+  const std::vector<ServiceListener<PV01<T>>*>& GetListeners() const override {
+    return listeners;
+  }
+
+private:
+  std::unordered_map<std::string, PV01<T>> data; // Map to store PV01 values by product ID
+  std::vector<ServiceListener<PV01<T>>*> listeners; // Listeners to notify on updates
 };
 
 // Implementation of PV01 methods
@@ -130,17 +161,22 @@ long PV01<T>::GetQuantity() const {
   return quantity;
 }
 
+template<typename T>
+void PV01<T>::UpdateQuantity(long newQuantity) {
+  quantity = newQuantity;
+}
+
 // Implementation of BucketedSector methods
 template<typename T>
-BucketedSector<T>::BucketedSector(const vector<T>& _products, string _name) : products(_products), name(_name) {}
+BucketedSector<T>::BucketedSector(const std::vector<T>& _products, std::string _name) : products(_products), name(_name) {}
 
 template<typename T>
-const vector<T>& BucketedSector<T>::GetProducts() const {
+const std::vector<T>& BucketedSector<T>::GetProducts() const {
   return products;
 }
 
 template<typename T>
-const string& BucketedSector<T>::GetName() const {
+const std::string& BucketedSector<T>::GetName() const {
   return name;
 }
 

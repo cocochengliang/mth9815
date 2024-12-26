@@ -6,6 +6,10 @@
 
 #include "soa.hpp"
 #include "marketdataservice.hpp"
+#include <map>
+#include <vector>
+#include <string>
+#include <stdexcept>
 
 /**
  * A price stream order with price and quantity (visible and hidden).
@@ -55,13 +59,41 @@ private:
  * Type T is the product type.
  */
 template<typename T>
-class StreamingService : public Service<string, PriceStream<T>> {
+class StreamingService : public Service<std::string, PriceStream<T>> {
 public:
-  // Virtual destructor
-  virtual ~StreamingService() = default;
-
   // Publish two-way prices
-  virtual void PublishPrice(const PriceStream<T>& priceStream) = 0;
+  void PublishPrice(const PriceStream<T>& priceStream) {
+    const std::string& productId = priceStream.GetProduct().GetProductId();
+    dataStore[productId] = priceStream;
+
+    // Notify all listeners
+    for (auto &listener : listeners) {
+      listener->ProcessAdd(priceStream);
+    }
+  }
+
+  // Get data for a specific product
+  PriceStream<T>& GetData(std::string productId) override {
+    if (dataStore.find(productId) != dataStore.end()) {
+      return dataStore[productId];
+    } else {
+      throw std::runtime_error("PriceStream not found for product ID: " + productId);
+    }
+  }
+
+  // Add a listener to the service
+  void AddListener(ServiceListener<PriceStream<T>>* listener) override {
+    listeners.push_back(listener);
+  }
+
+  // Get all listeners
+  const std::vector<ServiceListener<PriceStream<T>>*>& GetListeners() const override {
+    return listeners;
+  }
+
+private:
+  std::map<std::string, PriceStream<T>> dataStore; // Map to store price streams by product ID
+  std::vector<ServiceListener<PriceStream<T>>*> listeners; // Listeners to notify on updates
 };
 
 // Implementation of PriceStreamOrder

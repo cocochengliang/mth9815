@@ -5,6 +5,10 @@
 #define TRADE_BOOKING_SERVICE_HPP
 
 #include "soa.hpp"
+#include <map>
+#include <vector>
+#include <string>
+#include <stdexcept>
 
 // Trade sides
 enum Side { BUY, SELL };
@@ -16,22 +20,23 @@ enum Side { BUY, SELL };
 template<typename T>
 class Trade {
 public:
-  // Constructor for a trade
-  Trade(const T &_product, string _tradeId, double _price, string _book, long _quantity, Side _side);
+  // Constructor for a Trade
+  Trade(const T &_product, std::string _tradeId, double _price, std::string _book, long _quantity, Side _side)
+    : product(_product), tradeId(_tradeId), price(_price), book(_book), quantity(_quantity), side(_side) {}
 
   // Getters
-  const T& GetProduct() const;
-  const string& GetTradeId() const;
-  double GetPrice() const;
-  const string& GetBook() const;
-  long GetQuantity() const;
-  Side GetSide() const;
+  const T& GetProduct() const { return product; }
+  const std::string& GetTradeId() const { return tradeId; }
+  double GetPrice() const { return price; }
+  const std::string& GetBook() const { return book; }
+  long GetQuantity() const { return quantity; }
+  Side GetSide() const { return side; }
 
 private:
   T product;
-  string tradeId;
+  std::string tradeId;
   double price;
-  string book;
+  std::string book;
   long quantity;
   Side side;
 };
@@ -42,33 +47,41 @@ private:
  * Type T is the product type.
  */
 template<typename T>
-class TradeBookingService : public Service<string, Trade<T>> {
+class TradeBookingService : public Service<std::string, Trade<T>> {
 public:
   // Book the trade
-  virtual void BookTrade(const Trade<T> &trade) = 0;
+  void BookTrade(const Trade<T> &trade) {
+    const std::string& tradeId = trade.GetTradeId();
+    dataStore[tradeId] = trade;
+
+    // Notify all listeners
+    for (auto &listener : listeners) {
+      listener->ProcessAdd(trade);
+    }
+  }
+
+  // Get data for a specific trade ID
+  Trade<T>& GetData(std::string tradeId) override {
+    if (dataStore.find(tradeId) != dataStore.end()) {
+      return dataStore[tradeId];
+    } else {
+      throw std::runtime_error("Trade not found for ID: " + tradeId);
+    }
+  }
+
+  // Add a listener to the service
+  void AddListener(ServiceListener<Trade<T>>* listener) override {
+    listeners.push_back(listener);
+  }
+
+  // Get all listeners
+  const std::vector<ServiceListener<Trade<T>>*>& GetListeners() const override {
+    return listeners;
+  }
+
+private:
+  std::map<std::string, Trade<T>> dataStore; // Map to store trades by trade ID
+  std::vector<ServiceListener<Trade<T>>*> listeners; // Listeners to notify on updates
 };
-
-// Implementation of Trade
-template<typename T>
-Trade<T>::Trade(const T &_product, string _tradeId, double _price, string _book, long _quantity, Side _side)
-  : product(_product), tradeId(_tradeId), price(_price), book(_book), quantity(_quantity), side(_side) {}
-
-template<typename T>
-const T& Trade<T>::GetProduct() const { return product; }
-
-template<typename T>
-const string& Trade<T>::GetTradeId() const { return tradeId; }
-
-template<typename T>
-double Trade<T>::GetPrice() const { return price; }
-
-template<typename T>
-const string& Trade<T>::GetBook() const { return book; }
-
-template<typename T>
-long Trade<T>::GetQuantity() const { return quantity; }
-
-template<typename T>
-Side Trade<T>::GetSide() const { return side; }
 
 #endif // TRADE_BOOKING_SERVICE_HPP
